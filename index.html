@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-transport="peer">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4fc">
+  <meta name="description" content="涂个乐，和朋友一起画画猜词的联机小游戏。">
+  <title>涂个乐 · 你画我猜</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./client.js"></script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="m14.8 5.2 4 4m-13 4.6L16 3.7a2.8 2.8 0 0 1 4 4L9.8 17.9l-5.4 1.6z"/><path d="M3 22h15"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m2-15a3 3 0 0 1 0 6m2 3a4 4 0 0 1 2 4v2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 11.4a7.7 7.7 0 0 1-8.2 7.1H9l-4.3 2.3v-4.4A7 7 0 0 1 3 11.4a8 8 0 0 1 8.8-7.4 8 8 0 0 1 8.7 7.4Z"/><path d="M8 11.4h.01m3.8 0h.01m3.8 0h.01" stroke-width="2.8"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.9a4 4 0 0 0 5.7 0l4-4A4 4 0 0 0 14 4.2l-2.3 2.3m2.3 3.6a4 4 0 0 0-5.7 0l-4 4A4 4 0 0 0 10 19.8l2.3-2.3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.3 1.7M9 2h6m-3 0v3"/></symbol>
+    <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m5 16 4-4 3 3 3-4 4 5M8 8h.01"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7.3 18.5-4-4a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0l6.2 6.2a2 2 0 0 1 0 2.8l-6 5.8H7.3Zm.3-11.1 9 9m-6 2.1h10"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="m9 5-5 5 5 5M4 10h9a5 5 0 1 1 0 10h-2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13m-8 4v5m4-5v5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-door" viewBox="0 0 24 24"><path d="M13 5V3H5v18h8v-2m-3-7h11m-4-4 4 4-4 4"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7 18-4-7-7-4 18-7ZM10 14 21 3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2c0 6-4 10-10 10 6 0 10 4 10 10 0-6 4-10 10-10C16 12 12 8 12 2Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L19 7"/></symbol>
+    <symbol id="i-crown" viewBox="0 0 24 24"><path d="m3 7 5 4 4-7 4 7 5-4-2 12H5L3 7Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  </svg>
+
+  <header class="masthead">
+    <div class="mast-inner">
+      <a class="brand" href="./" aria-label="涂个乐首页">
+        <span class="brand-icon"><svg><use href="#i-pencil"/></svg></span>
+        <span class="brand-name">涂个乐<span>.</span></span>
+      </a>
+      <div class="mast-actions">
+        <span class="connection"><span class="connection-dot"></span><span id="connection-text">在线联机</span></span>
+        <button type="button" class="button small outline" id="help"><svg><use href="#i-info"/></svg>玩法</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="banner" aria-labelledby="page-title">
+      <div class="banner-copy">
+        <p class="banner-kicker"><svg><use href="#i-spark"/></svg> <span id="banner-label">好友派对</span></p>
+        <h1 id="page-title">你画我猜<span>!</span></h1>
+        <p id="banner-description">轮流画画，看看谁最懂你的灵魂画作。</p>
+      </div>
+      <canvas id="banner-art" class="banner-art" aria-hidden="true"></canvas>
+      <div class="banner-action" id="banner-action">
+        <div class="room-rule"><svg><use href="#i-people"/></svg> 2–8 人</div>
+        <div class="room-rule"><svg><use href="#i-clock"/></svg> 每次 75 秒</div>
+      </div>
+    </section>
+
+    <div class="game-grid">
+      <section class="panel player-panel" aria-labelledby="players-title">
+        <header class="panel-header">
+          <h2 id="players-title"><span class="section-icon"><svg><use href="#i-people"/></svg></span> 玩家</h2>
+          <span class="count" id="player-count">0 / 8</span>
+        </header>
+        <div class="players" id="players"></div>
+        <div class="player-bottom" id="player-bottom"></div>
+      </section>
+
+      <section class="panel board-panel" aria-labelledby="board-title">
+        <header class="panel-header board-header">
+          <h2 id="board-title"><span class="section-icon"><svg><use href="#i-board"/></svg></span> 画板</h2>
+          <div class="board-status" id="board-status"><span class="phase-badge"><span></span> 等待开局</span></div>
+        </header>
+        <div class="drawing-space" id="drawing-space">
+          <canvas id="board" aria-label="实时同步画板"></canvas>
+          <div class="board-overlay" id="board-overlay"></div>
+        </div>
+        <div class="brushbar" aria-label="画板工具">
+          <div class="toolgroup">
+            <button class="tool active" type="button" data-tool="pen" aria-label="画笔" title="画笔"><svg><use href="#i-pencil"/></svg></button>
+            <button class="tool" type="button" data-tool="eraser" aria-label="橡皮" title="橡皮"><svg><use href="#i-eraser"/></svg></button>
+          </div>
+          <div class="swatches" id="swatches" aria-label="颜色"></div>
+          <label class="brush-size" title="笔刷粗细">
+            <select aria-label="笔刷粗细" id="brush-size"><option value="3">细</option><option value="6" selected>中</option><option value="11">粗</option><option value="20">特粗</option></select>
+            <svg><use href="#i-chevron"/></svg>
+          </label>
+          <div class="toolgroup end-tools">
+            <button class="tool" id="undo" type="button" aria-label="撤销" title="撤销"><svg><use href="#i-undo"/></svg></button>
+            <button class="tool" id="clear" type="button" aria-label="清空画板" title="清空画板"><svg><use href="#i-trash"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel chat-panel" aria-labelledby="chat-title">
+        <header class="panel-header">
+          <h2 id="chat-title"><span class="section-icon"><svg><use href="#i-chat"/></svg></span> 猜词聊天</h2>
+        </header>
+        <div class="chat-log" id="chat-log" role="log" aria-label="聊天记录"></div>
+        <form class="chat-form" id="chat-form">
+          <input id="guess" name="guess" aria-label="猜词或聊天" placeholder="在这里输入你的猜测…" maxlength="80" autocomplete="off">
+          <button type="submit" class="send" aria-label="发送"><svg><use href="#i-send"/></svg></button>
+        </form>
+      </section>
+    </div>
+
+    <footer class="shell-footer">
+      <button type="button" id="leave" class="text-button" hidden><svg><use href="#i-door"/></svg> 离开房间</button>
+    </footer>
+  </main>
+
+  <dialog id="dialog" aria-labelledby="dialog-title">
+    <div class="dialog-content">
+      <button class="tool dialog-close" type="button" id="close-dialog" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+      <span class="dialog-icon" id="dialog-icon"></span>
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
