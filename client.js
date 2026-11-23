@@ -57,7 +57,7 @@ function connection(text, offline = false) {
 }
 
 async function request(path, body, key = token) {
-  if (isPages) return (await import('./pages-peer.js')).peerRequest(path, body, key);
+  if (isPages) return (await import('./pages-peer.js?v=f4aba662da')).peerRequest(path, body, key);
   const response = await fetch('/api/rooms' + path, {
     method: body ? 'POST' : 'GET',
     headers: { 'Content-Type': 'application/json', ...(key ? { 'x-game-token': key } : {}) },
@@ -131,7 +131,8 @@ async function poll(expectedEpoch = epoch) {
       pending = pending.filter(mark => !acknowledged.has(mark.nonce));
       schedulePaint();
     }
-    connection('已连接');
+    if (next.signalingReady === false) connection('房主信令重连中', true);
+    else connection('已连接');
   } catch (error) {
     if (expectedEpoch !== epoch) return;
     if (error.status === 401 || error.status === 404) {
@@ -320,11 +321,20 @@ function showDialog(title, glyph, content) {
   if (!dialog.open) dialog.showModal();
 }
 
+function parseRoomCode(value) {
+  const input = value.trim();
+  if (/^https?:\/\//i.test(input)) {
+    try { return (new URL(input).searchParams.get('room') ?? '').trim().toUpperCase(); }
+    catch { return ''; }
+  }
+  return input.normalize('NFKC').replace(/[\s-]/g, '').toUpperCase();
+}
+
 function roomForm(create, preset = '') {
   showDialog(create ? '创建房间' : '加入房间', create ? 'plus' : 'door',
     '<form class="room-form"><label>你的昵称<input name="name" required maxlength="16" placeholder="取个好记的名字" autocomplete="nickname" autofocus></label>'
     + (create ? '<label>游戏轮数<select name="rounds"><option value="1">1 轮</option><option value="2">2 轮</option><option value="3" selected>3 轮</option><option value="4">4 轮</option><option value="5">5 轮</option></select></label>'
-      : '<label>房间码<input class="code-input" name="code" required maxlength="6" placeholder="输入 6 位房间码" autocomplete="off" autocapitalize="characters"></label>')
+      : '<label>房间码或邀请链接<input class="code-input" name="code" required maxlength="400" placeholder="输入 6 位房间码，或粘贴链接" autocomplete="off" autocapitalize="characters"></label>')
     + '<p class="form-error" role="alert" hidden></p><button class="button primary" type="submit">' + (create ? '创建房间' : '加入房间') + '</button></form>');
   const form = $('.room-form');
   form.elements.name.value = load(localStorage, 'tugelo-name');
@@ -333,15 +343,17 @@ function roomForm(create, preset = '') {
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const name = form.elements.name.value.trim();
-    const roomCode = create ? '' : form.elements.code.value.trim().toUpperCase();
+    const roomCode = create ? '' : parseRoomCode(form.elements.code.value);
     const errorText = form.querySelector('.form-error');
     const button = form.querySelector('button');
     if (!create && !/^[A-HJ-NP-Z2-9]{6}$/.test(roomCode)) {
-      errorText.textContent = '请输入正确的 6 位房间码。';
+      errorText.textContent = '请输入有效的 6 位房间码，或粘贴完整的邀请链接。';
       errorText.hidden = false;
       return;
     }
     button.disabled = true;
+    const label = button.textContent;
+    button.textContent = create ? '正在创建房间…' : '正在连接房主…';
     errorText.hidden = true;
     try {
       const data = create ? await request('', { name, rounds: Number(form.elements.rounds.value) }, '')
@@ -351,12 +363,16 @@ function roomForm(create, preset = '') {
     } catch (error) {
       errorText.textContent = error.name === 'TimeoutError' ? '连接超时，请再试一次。' : error.message;
       errorText.hidden = false;
-    } finally { button.disabled = false; }
+    } finally { button.disabled = false; button.textContent = label; }
   });
 }
 
 async function copyInvite() {
   if (!room) return;
+  if (room.signalingReady === false) {
+    notify('房主的信令暂时断开，恢复连接后好友即可加入。');
+    return;
+  }
   const url = new URL('./', location.href);
   url.searchParams.set('room', room.code);
   try {
@@ -732,7 +748,7 @@ drawBanner();
 drawUI();
 setInterval(updateClock, 250);
 
-const incoming = new URLSearchParams(location.search).get('room')?.trim().toUpperCase();
+const incoming = parseRoomCode(new URLSearchParams(location.search).get('room') ?? '');
 if (incoming && /^[A-HJ-NP-Z2-9]{6}$/.test(incoming)) {
   const saved = load(sessionStorage, 'tugelo-room-' + incoming);
   if (saved) {

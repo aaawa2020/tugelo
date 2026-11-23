@@ -3,7 +3,20 @@ import {
   validateMark, maxMarks, makeRoom, joinPlayer, applyAction, authorizeMark,
 } from './rules.js';
 
-const signalClient = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js';
+const signalClients = [
+  'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js',
+  'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js',
+];
+const iceServers = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  {
+    urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'],
+    username: 'peerjs',
+    credential: 'peerjsp',
+  },
+];
 const peerId = code => 'tugelo-pages-v1-' + code;
 const label = 'tugelo-v1';
 let peerLibrary;
@@ -17,37 +30,73 @@ function peerError(error) {
   return new GameError('联机服务连接失败，请重试。', 503);
 }
 
-function loadPeer() {
-  if (!peerLibrary) {
-    peerLibrary = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = signalClient;
-      script.async = true;
-      script.onload = () => window.Peer ? resolve(window.Peer) : reject(new GameError('联机组件加载失败。', 503));
-      script.onerror = () => reject(new GameError('联机组件加载失败，请重试。', 503));
-      document.head.append(script);
-    }).catch(error => { peerLibrary = null; throw error; });
+function loadScript(src) {
+  return new Promise(resolve => {
+    const script = document.createElement('script');
+    const finish = () => {
+      clearTimeout(timeout);
+      script.onload = script.onerror = null;
+      if (!window.Peer) script.remove();
+      resolve(window.Peer);
+    };
+    const timeout = setTimeout(finish, 5000);
+    script.src = src;
+    script.async = true;
+    script.onload = script.onerror = finish;
+    document.head.append(script);
+  });
+}
+
+async function loadPeer() {
+  if (typeof RTCPeerConnection !== 'function') {
+    fails('当前浏览器不支持 WebRTC 联机，请用最新版 Chrome、Edge 或 Safari 打开。');
   }
-  return peerLibrary;
+  if (window.Peer) return window.Peer;
+  peerLibrary ??= (async () => {
+    for (const src of signalClients) {
+      const Peer = await loadScript(src);
+      if (Peer) return Peer;
+    }
+    fails('联机组件加载失败，请刷新页面或换个网络。', 503);
+  })();
+  try { return await peerLibrary; }
+  catch (error) { peerLibrary = null; throw error; }
 }
 
 async function openPeer(id) {
   const Peer = await loadPeer();
   return new Promise((resolve, reject) => {
-    const peer = id ? new Peer(id) : new Peer();
-    let ready = false;
+    const peer = new Peer(id, { config: { iceServers, sdpSemantics: 'unified-plan' } });
+    let settled = false;
     const finish = error => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
       if (error) { peer.destroy(); reject(error); }
-      else { ready = true; resolve(peer); }
+      else resolve(peer);
     };
-    const timeout = setTimeout(() => finish(new GameError('连接联机服务超时，请重试。', 503)), 12_000);
-    peer.on('open', () => { if (!ready) finish(); });
-    peer.on('error', error => { if (!ready) finish(peerError(error)); });
-    peer.on('disconnected', () => {
-      if (ready && !peer.destroyed) setTimeout(() => { if (peer.disconnected && !peer.destroyed) peer.reconnect(); }, 1200);
-    });
+    const timeout = setTimeout(() => finish(new GameError('信令服务连接超时，请检查网络后重试。', 503)), 12_000);
+    peer.on('open', () => finish());
+    peer.on('error', error => finish(peerError(error)));
   });
+}
+
+function reconnectHost(session) {
+  const { peer } = session;
+  let backoff = 1200;
+  const retry = () => {
+    if (host !== session || peer.destroyed || session.reconnectTimer) return;
+    session.reconnectTimer = setTimeout(() => {
+      session.reconnectTimer = null;
+      if (host !== session || peer.destroyed || !peer.disconnected) return;
+      try { peer.reconnect(); }
+      catch { retry(); }
+    }, backoff);
+    backoff = Math.min(backoff * 2, 10_000);
+  };
+  peer.on('disconnected', retry);
+  peer.on('error', () => { if (peer.disconnected) retry(); });
+  peer.on('open', () => { backoff = 1200; });
 }
 
 export function createPeerRoom(code, input) {
@@ -149,6 +198,7 @@ async function createHost(body) {
       host = { code, room, peer, channels: new Map(), departures: new Map() };
       const session = host;
       peer.on('connection', channel => acceptConnection(session, channel));
+      reconnectHost(session);
       return { token: room.owner.token, room: room.handle('sync', null, room.owner.token).room };
     } catch (error) { if (error.status !== 409) throw error; }
   }
@@ -173,18 +223,26 @@ function guestSession(code) {
     if (session.closed) { peer.destroy(); reject(new GameError('连接已取消。', 503)); return; }
     const channel = peer.connect(peerId(code), { label, reliable: true });
     session.channel = channel;
-    let ready = false;
+    let opened = false;
     const finish = error => {
       clearTimeout(timeout);
-      if (ready) { session.close(); return; }
-      if (error) { session.close(); reject(error); }
-      else { ready = true; resolve(); }
+      if (error) {
+        if (!opened) reject(error);
+        session.close();
+      } else if (!opened) {
+        opened = true;
+        resolve();
+      }
     };
-    const timeout = setTimeout(() => finish(new GameError('连接房主超时。请确认房间码，或换个网络重试。', 503)), 12_000);
+    const unableToConnect = () => new GameError('无法与房主建立直连。请双方保持游戏页面打开，或换个网络重试。', 503);
+    const timeout = setTimeout(() => finish(unableToConnect()), 20_000);
     channel.on('open', () => finish());
-    channel.on('error', () => finish(new GameError('连接房主失败，请重试。', 503)));
+    channel.on('error', () => finish(unableToConnect()));
     channel.on('close', () => finish(new GameError('与房主的连接已断开。', 503)));
-    peer.on('error', error => { if (error.type === 'peer-unavailable') finish(peerError(error)); });
+    peer.on('error', error => { if (!opened) finish(peerError(error)); });
+    channel.peerConnection?.addEventListener('iceconnectionstatechange', event => {
+      if (event.target.iceConnectionState === 'failed') finish(unableToConnect());
+    });
     channel.on('data', reply => {
       if (!reply || typeof reply !== 'object') return;
       const request = session.pending.get(reply.id);
@@ -234,10 +292,14 @@ export async function peerRequest(path, body, key) {
   const after = Number(url.searchParams.get('after'));
   if (host?.code === code) {
     const data = host.room.handle(route, body, key, turn, after);
+    if (data.room) data.room.signalingReady = host.peer.open;
     if (route === 'act' && body.action === 'leave') {
-      host.peer.destroy();
-      for (const timer of host.departures.values()) clearTimeout(timer);
+      const session = host;
       host = null;
+      clearTimeout(session.reconnectTimer);
+      for (const timer of session.departures.values()) clearTimeout(timer);
+      session.channels.clear();
+      session.peer.destroy();
     }
     return data;
   }
